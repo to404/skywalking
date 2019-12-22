@@ -18,8 +18,8 @@
 
 package org.apache.skywalking.apm.plugin.rabbitmq;
 
-import com.rabbitmq.client.AMQP;
-import com.rabbitmq.client.Envelope;
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
 import org.apache.skywalking.apm.agent.core.context.CarrierItem;
 import org.apache.skywalking.apm.agent.core.context.ContextCarrier;
 import org.apache.skywalking.apm.agent.core.context.ContextManager;
@@ -30,29 +30,39 @@ import org.apache.skywalking.apm.agent.core.plugin.interceptor.enhance.EnhancedI
 import org.apache.skywalking.apm.agent.core.plugin.interceptor.enhance.InstanceMethodsAroundInterceptor;
 import org.apache.skywalking.apm.agent.core.plugin.interceptor.enhance.MethodInterceptResult;
 import org.apache.skywalking.apm.network.trace.component.ComponentsDefine;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.core.MessageProperties;
 
 import java.lang.reflect.Method;
 
 public class RabbitMQConsumerInterceptor implements InstanceMethodsAroundInterceptor {
     public static final String OPERATE_NAME_PREFIX = "RabbitMQ/";
-    public static final String CONSUMER_OPERATE_NAME_SUFFIX = "/Consumer";
+    public static final String CONSUMER_OPERATE_NAME_SUFFIX = "/Consumer/Invoke/";
+
     @Override
     public void beforeMethod(EnhancedInstance objInst, Method method, Object[] allArguments, Class<?>[] argumentsTypes, MethodInterceptResult result) throws Throwable {
         ContextCarrier contextCarrier = new ContextCarrier();
-        String url = (String) objInst.getSkyWalkingDynamicField();
-        Envelope envelope = (Envelope) allArguments[1];
-        AMQP.BasicProperties  properties = (AMQP.BasicProperties) allArguments[2];
-        AbstractSpan  activeSpan = ContextManager.createEntrySpan(OPERATE_NAME_PREFIX + "Topic/" + envelope.getExchange() + "Queue/" + envelope.getRoutingKey() + CONSUMER_OPERATE_NAME_SUFFIX, null).start(System.currentTimeMillis());
-        Tags.MQ_BROKER.set(activeSpan,url);
-        Tags.MQ_TOPIC.set(activeSpan,envelope.getExchange());
-        Tags.MQ_QUEUE.set(activeSpan, envelope.getRoutingKey());
+
+        Connection connection = ((Channel)allArguments[0]).getConnection();
+        String url =  connection.getAddress().toString().replace("/","") + ":" + connection.getPort();
+        Message message = (Message) allArguments[1];
+        MessageProperties msgProperties = message.getMessageProperties();
+        String msgTopic = msgProperties.getReceivedRoutingKey();
+        // show message content in trace
+        String msgContent = new String(message.getBody());
+        AbstractSpan activeSpan = ContextManager.createEntrySpan(OPERATE_NAME_PREFIX + "Topic/" + msgTopic +
+                CONSUMER_OPERATE_NAME_SUFFIX + msgContent, null).start(System.currentTimeMillis());
+
+        Tags.MQ_BROKER.set(activeSpan, url);
+        Tags.MQ_TOPIC.set(activeSpan, msgProperties.getReceivedExchange());
+        Tags.MQ_QUEUE.set(activeSpan, msgProperties.getReceivedRoutingKey());
         activeSpan.setComponent(ComponentsDefine.RABBITMQ_CONSUMER);
         SpanLayer.asMQ(activeSpan);
         CarrierItem next = contextCarrier.items();
         while (next.hasNext()) {
             next = next.next();
-            if (properties.getHeaders() != null && properties.getHeaders().get(next.getHeadKey()) != null) {
-                next.setHeadValue(properties.getHeaders().get(next.getHeadKey()).toString());
+            if (msgProperties.getHeaders() != null && msgProperties.getHeader(next.getHeadKey()) != null) {
+                next.setHeadValue(msgProperties.getHeader(next.getHeadKey()).toString());
             }
         }
         ContextManager.extract(contextCarrier);
