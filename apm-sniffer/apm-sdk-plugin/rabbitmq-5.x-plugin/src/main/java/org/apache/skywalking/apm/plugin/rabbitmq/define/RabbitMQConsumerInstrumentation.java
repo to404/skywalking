@@ -21,10 +21,11 @@ package org.apache.skywalking.apm.plugin.rabbitmq.define;
 import net.bytebuddy.description.method.MethodDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 import org.apache.skywalking.apm.agent.core.plugin.interceptor.ConstructorInterceptPoint;
+import org.apache.skywalking.apm.agent.core.plugin.interceptor.DeclaredInstanceMethodsInterceptPoint;
 import org.apache.skywalking.apm.agent.core.plugin.interceptor.InstanceMethodsInterceptPoint;
 import org.apache.skywalking.apm.agent.core.plugin.interceptor.enhance.ClassInstanceMethodsEnhancePluginDefine;
 import org.apache.skywalking.apm.agent.core.plugin.match.ClassMatch;
-import org.apache.skywalking.apm.agent.core.plugin.match.MultiClassNameMatch;
+import org.apache.skywalking.apm.agent.core.plugin.match.HierarchyMatch;
 
 import static net.bytebuddy.matcher.ElementMatchers.named;
 import static org.apache.skywalking.apm.agent.core.plugin.bytebuddy.ArgumentTypeNameMatch.takesArgumentWithType;
@@ -53,7 +54,7 @@ public class RabbitMQConsumerInstrumentation extends ClassInstanceMethodsEnhance
     @Override
     public InstanceMethodsInterceptPoint[] getInstanceMethodsInterceptPoints() {
         return new InstanceMethodsInterceptPoint[] {
-                new InstanceMethodsInterceptPoint() {
+                new DeclaredInstanceMethodsInterceptPoint() {
                     @Override public ElementMatcher<MethodDescription> getMethodsMatcher() {
                         return named(ENHANCE_METHOD_DISPATCH).and(takesArgumentWithType(1,"org.springframework.amqp.core.Message"));
                     }
@@ -72,6 +73,6 @@ public class RabbitMQConsumerInstrumentation extends ClassInstanceMethodsEnhance
 
     @Override
     protected ClassMatch enhanceClass() {
-        return MultiClassNameMatch.byMultiClassMatch(ENHANCE_CLASS_PRODUCER);
+        return HierarchyMatch.byHierarchyMatch(new String[] {ENHANCE_CLASS_PRODUCER});
     }
 }
